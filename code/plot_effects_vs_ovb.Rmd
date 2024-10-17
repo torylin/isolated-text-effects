@@ -1,0 +1,223 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(ggh4x)
+library(ggstance)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+# library(emojifont)
+library(Cairo)
+# cbPalette <- c('#1b9e77', '#e7298a', '#d95f02', '#d9380264', '#d90202', '#FFC000', '#8b8680')
+# cbPalette <- c('#1b9e77', '#e7298a', '#d95f02', '#FFC000', '#8b8680')
+cbPalette <- c('#00acac', '#808080', '#db00b8')
+# clf_string <- 'treatsvm_'
+# clf_string_2 <- 'svm'
+# out_string <- 'outsvm_'
+# out_string_2 <- 'outcomesvm_'
+clf_string <- ''
+clf_string_2 <- 'lr'
+out_string <- ''
+out_string_2 <- 'outcomelr_'
+# clf_string <- 'treatgbm_'
+# clf_string_2 <- 'gbm'
+# out_string <- 'outgbm_'
+# out_string_2 <- 'outcomegbm_'
+# clf_string <- 'treatmlp_'
+# clf_string_2 <- 'mlp'
+# out_string <- 'outmlp_'
+# out_string_2 <- 'outcomemlp_'
+split_type <- 'cv'
+num_iters <- '5'
+# split_type <- 'bootstrap'
+# num_iters <- '1000'
+# norm_string <- 'norm_a'
+norm_string <- 'norm_total'
+# nu_string <- 'nuplugin_no_ood_'
+# nu_string <- 'nudr_no_ood_'
+# nu_string <- 'nuplugin_no_ood_trunc0.01_'
+# nu_string <- 'nudr_no_ood_trunc0.01_'
+# nu_string <- 'nuplugin_no_ood_trunc0.05_'
+# nu_string <- 'nudr_no_ood_trunc0.05_'
+# nu_string <- 'nuplugin_no_ood_trunc0.1_'
+# nu_string <- 'nudr_no_ood_trunc0.1_'
+# bound_string <- 'bound_'
+# nu_strings <- c('nuplugin_no_ood_', 'nudr_no_ood_',
+#     'nuplugin_no_ood_trunc0.01_', 'nudr_no_ood_trunc0.01_',
+#     'nuplugin_no_ood_trunc0.05_', 'nudr_no_ood_trunc0.05_',
+#     'nuplugin_no_ood_trunc0.1_', 'nudr_no_ood_trunc0.1_')
+# nu_strings <- c('nuplugin_no_ood_trunc0.05_', 'nudr_no_ood_trunc0.05_',
+#     'nuplugin_no_ood_trunc0.1_', 'nudr_no_ood_trunc0.1_')
+# nu_strings <- c('nuplugin_no_ood', 'nudr_no_ood')
+nu_strings <- c('nudr_no_ood')
+trunc_strings <- c('', '_trunc0.01', '_trunc0.05', '_trunc0.1')
+# trunc_strings <- c('_trunc0.01', '_trunc0.05', '_trunc0.1')
+# bound_strings <- c('bound_', 'bound_ci_')
+bound_strings <- c('bound_')
+# se_string <- 'se4'
+# se_string <- 'se_original'
+se_string <- 'se2'
+
+```
+
+```{r}
+for (trunc_string in trunc_strings){
+    for (nu_string in nu_strings){
+        nu_string <- paste0(nu_string, trunc_string, '_')
+        for (bound_string in bound_strings){
+            for (i in 1:3){
+                df <- read.csv(paste0('./results/amazon_synthetic/ovb/', se_string, '/norm_none/pr_label_synthetic_direct_iso_effects_RV0', 
+                        bound_string, clf_string, out_string,  sprintf('type%d_', i), nu_string,
+                        split_type, num_iters, '_long.csv'))
+                df <- df[!grepl("ovb", df$estimate_type), ]
+                df_wide <- read.csv(paste0('./results/amazon_synthetic/ovb/', se_string, '/norm_none/pr_label_synthetic_direct_iso_effects_RV0', 
+                        bound_string, clf_string, out_string,  sprintf('type%d_', i), nu_string,
+                        split_type, num_iters, '_wide.csv'))
+                # df <- read.csv(paste0('./results/amazon_synthetic/ovb/bootstrap/norm_none/pr_label_synthetic_direct_iso_effects_', 
+                #         clf_string, out_string,  sprintf('type%d_', i), nu_string,
+                #         split_type, num_iters, '_long.csv'))
+                # df_wide <- read.csv(paste0('./results/amazon_synthetic/ovb/bootstrap/norm_none/pr_label_synthetic_direct_iso_effects_', 
+                #         clf_string, out_string,  sprintf('type%d_', i), nu_string,
+                #         split_type, num_iters, '_wide.csv'))
+                names(df)[names(df) == 'feature'] <- 'treatment'
+                treatments <- unique(df['treatment'])[,1]
+                df <- df[df$estimate_type %in% c('true', 'naive', 'dr'),]
+                df['estimate_type'] <- as.factor(df$estimate_type)
+                df <- df[df$num_features <= 9,]
+                df_wide <- df_wide[df_wide$num_features <= 9,]
+
+                for (treat in treatments){
+                    df_weights <- read.csv(paste0('./results/amazon_synthetic/weights/', treat, '_', clf_string_2, '_weights', trunc_string, '.csv'))
+                    # df_weights$weight_type <- factor(df_weights$weight_type, levels = c('1/p(a=1|a^c)', '1/p(a=0|a^c)', 'a/p(a=1|a^c)', '(1-a)/p(a=0|a^c)'))
+                    df_sub <- df[df['treatment'] == treat,]
+                    df_sub_wide <- df_wide[df_wide['treatment'] == treat,]
+                    treat_string <- paste0(treat, '_')
+                    true_effect <- unique(df_sub[df_sub['estimate_type'] == 'true',]$ate)
+
+                    # output_image <- paste0('./plots/amazon_synthetic/ovb/bootstrap/norm_none/pr_label_synthetic_direct1.00.0_iso_effects_', 
+                    #         treat_string, clf_string, out_string, sprintf('type%d_', i), nu_string, 
+                    #         split_type, num_iters, '.pdf')
+                    output_image <- paste0('./plots/amazon_synthetic/ovb/', se_string, '/norm_none/pr_label_synthetic_direct1.00.0_iso_effects_RV0', 
+                            bound_string, treat_string, clf_string, out_string, sprintf('type%d_', i), nu_string, 
+                            split_type, num_iters, '.pdf')
+
+                    effectsplot <- ggplot(df_sub, aes(x=ate, y=num_features)) + 
+                        geom_point(aes(color=estimate_type), position=ggstance::position_dodgev(height=0.5), size=3) +
+                        geom_errorbar(aes(xmin=lower, xmax=upper, color=estimate_type),
+                                        position=ggstance::position_dodgev(height=0.5),
+                                        width=0.5,) +
+                        geom_vline(xintercept=0, linetype=3) +
+                        geom_vline(xintercept=true_effect, linetype='longdash', color='#00acac') +
+                        # annotate("text", x=0, y=10.5, label="0", vjust=-0.5, size=5) +
+                        # ggtitle('Effects of language attributes on opinions of 2019 HK protests') + 
+                        theme_minimal() +
+                        scale_colour_manual(values=cbPalette, breaks=c('true', 'naive', 'dr'),
+                            labels=c('true', 'naive', 'ours')) +
+                        # scale_colour_manual(values=cbPalette, breaks=c('true', 'ipw', 'dr', 'outcome model', 'naive')) +
+                        # scale_colour_discrete(breaks=c('source', 'transported', 'target')) + 
+                        theme(legend.position='top', axis.title.y=element_text(size=20), plot.title = element_text(hjust = 0.5),
+                                axis.text=element_text(size=18), legend.title=element_blank(), legend.text=element_text(size=18), axis.title.x=element_text(size=20),
+                                panel.grid.major.x = element_blank(),    # Remove major grid lines
+                                panel.grid.minor.x = element_blank())  +
+                        coord_cartesian(xlim=c(min(df_sub$lower) - 0.5, max(df_sub$upper) + 0.5)) +
+                        scale_y_discrete(name='# dimensions', limits=2:9) +
+                        scale_x_continuous(name=paste0('isolated effect (intervention = ', treat, ')'))    
+
+                    df_long <- df_sub_wide %>% 
+                        gather(key = "variable", value = "value", sigmasq, nusq, RV)
+                    # df_long <- df_sub_wide %>% 
+                    #     gather(key = "variable", value = "value", sigmasq, nusq)
+
+                    df_long$variable <- factor(df_long$variable, 
+                            levels = c('nusq', 'sigmasq', 'RV'),
+                            labels = c('overlap \u2193', 'fidelity \u2193', 'robustness value \u2191'))
+
+                    
+                    ovbplot <- ggplot(df_long, aes(x=num_features, y=value, color=variable)) + 
+                        geom_point(size=3) +
+                        labs(x = '# dimensions', y = '', color = '') +
+                        theme_minimal() +
+                        facet_wrap(~ variable, scales = "free_y", ncol = 1) +  # Use labeller for strip titles) + 
+                        # scale_color_discrete(labels = c(expression(nu^2), expression(sigma^2), 'Robustness value')) + # Use expressions here
+                        theme(legend.position='none', strip.text = element_text(size = 16), axis.title.y=element_text(size=20), plot.title = element_text(hjust = 0.5),
+                                axis.text.x=element_text(size=18), axis.text.y=element_text(size=14), axis.title.x=element_text(size=20),
+                                panel.grid.minor = element_blank())
+                    # grid.arrange(effectsplot, ovbplot, ncol=2)
+
+                    # weightsplot <- ggplot(df_weights, aes(x = num_features, y = mean, color=weight_type)) +
+                    #     geom_point() +                                        # Plot points
+                    #     geom_errorbar(aes(ymin = lower, ymax = upper, color=weight_type), width = 0.2) +  # Add error bars
+                    #     facet_wrap(~ weight_type, scales = "free_y", ncol = 1) +                           # Facet by weight_type
+                    #     labs(x = "# features", y = "weight", color = '') +
+                    #     theme_minimal()
+
+                    # ggsave(output_image, arrangeGrob(effectsplot, ovbplot, weightsplot, ncol=3), 
+                    #     width=15, height=6, device='pdf')
+                    ggsave(output_image, arrangeGrob(effectsplot, ovbplot, ncol=2), 
+                        width=10, height=5.75, device=cairo_pdf)
+                }
+                print(c(i, nu_string, bound_string))
+            }
+            # print(c(nu_string, bound_string))
+        }
+    }
+}
+```
+
+
+```{r}
+for (i in 1:3){
+    df <- read.csv(paste0('./results/amazon_synthetic/ovb/', norm_string, '/pr_label_synthetic_direct_iso_effects_RV0', 
+            bound_string, clf_string, out_string,  sprintf('type%d_', i), nu_string, 'norm_',
+            split_type, num_iters, '_long.csv'))
+    df_wide <- read.csv(paste0('./results/amazon_synthetic/ovb/', norm_string, '/pr_label_synthetic_direct_iso_effects_RV0', 
+            bound_string, clf_string, out_string,  sprintf('type%d_', i), nu_string, 'norm_',
+            split_type, num_iters, '_wide.csv'))
+    names(df)[names(df) == 'feature'] <- 'treatment'
+    treatments <- unique(df['treatment'])[,1]
+
+    for (treat in treatments){
+        df_sub <- df[df['treatment'] == treat,]
+        df_sub_wide <- df_wide[df_wide['treatment'] == treat,]
+        treat_string <- paste0(treat, '_')
+
+        output_image <- paste0('./plots/amazon_synthetic/ovb/', norm_string, '/pr_label_synthetic_direct1.00.0_iso_effects_RV0', 
+                bound_string, treat_string, clf_string, out_string, sprintf('type%d_', i), nu_string, 'norm_',
+                split_type, num_iters, '.pdf')
+
+        effectsplot <- ggplot(df_sub, aes(x=ate, y=num_features)) + 
+            geom_point(aes(color=estimate_type), position=ggstance::position_dodgev(height=0.5)) +
+            geom_errorbar(aes(xmin=lower, xmax=upper, color=estimate_type),
+                            position=ggstance::position_dodgev(height=0.5),
+                            width=0.25) +
+            geom_vline(xintercept=0, linetype=3) +
+            annotate("text", x=0, y=10.5, label="0", vjust=-0.5, size=5) +
+            # ggtitle('Effects of language attributes on opinions of 2019 HK protests') + 
+            theme_minimal() +
+            scale_colour_manual(values=cbPalette, breaks=c('true', 'ipw', 'dr', 'ovb', 'ovb_ci', 'outcome model', 'naive')) +
+            # scale_colour_discrete(breaks=c('source', 'transported', 'target')) + 
+            theme(legend.position='top', axis.title.y=element_text(size=20), plot.title = element_text(hjust = 0.5),
+                    axis.text=element_text(size=18), legend.title=element_blank(), legend.text=element_text(size=18), axis.title.x=element_text(size=20))  +
+            coord_cartesian(xlim=c(-10, 10)) +
+            scale_y_discrete(name='# features', limits=2:10) +
+            scale_x_continuous(name=paste0('ate (treatment = ', treat, ')'))
+        
+
+        df_long <- df_sub_wide %>% 
+            gather(key = "variable", value = "value", sigmasq, nusq, RV)
+        ovbplot <- ggplot(df_long, aes(x=num_features, y=value, color=variable)) + 
+            geom_point() +
+            labs(x = '# features', y = '', color = '') +
+            theme_minimal() +
+            facet_wrap(~ variable, scales = "free_y", ncol = 1)
+        # grid.arrange(effectsplot, ovbplot, ncol=2)
+
+        ggsave(output_image, arrangeGrob(effectsplot, ovbplot, ncol=2), 
+            width=10, height=6, device='pdf')
+    }
+}
+```
